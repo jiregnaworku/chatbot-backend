@@ -38,15 +38,20 @@ app.post("/api/chat", async (req, res) => {
       headers,
       body: JSON.stringify({
         version:
-          "a16z-infra/llama-2-7b-chat:8d18e20c7c1e8e3b6e2e7e2e7e2e7e2e7e2e7e2e7e2e7e2e7e2e7e2e7e2e7e2",
-        input: { prompt: userPrompt },
+          "5c7c1b7d8f46ec92491fc1f86d1ff4d52d598b2782d7f9b645fe2aaca5f8bf45", // meta/llama-2-7b-chat
+        input: {
+          prompt: userPrompt,
+          temperature: 0.75,
+          top_p: 1,
+          max_new_tokens: 500,
+        },
       }),
     });
 
     const data = await response.json();
 
     if (data.error) {
-      console.error("Replicate API error:", data.error);
+      console.error("❌ Replicate API error:", data.error);
       return res.status(500).json({ error: data.error });
     }
 
@@ -64,12 +69,13 @@ app.post("/api/chat", async (req, res) => {
     if (output.status === "succeeded") {
       res.json({ choices: [{ message: { content: output.output } }] });
     } else {
+      console.error("❌ Generation failed:", output.error || output.status);
       res
         .status(500)
         .json({ error: output.error || "Failed to get a valid response." });
     }
   } catch (err) {
-    console.error("Error communicating with Replicate:", err);
+    console.error("❌ Error communicating with Replicate:", err);
     res.status(500).json({ error: "Internal server error." });
   }
 });
