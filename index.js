@@ -1,7 +1,7 @@
 import express from "express";
-import fetch from "node-fetch";
 import dotenv from "dotenv";
 import cors from "cors";
+import fetch from "node-fetch";
 
 dotenv.config();
 
@@ -11,71 +11,69 @@ const PORT = process.env.PORT || 3001;
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || "https://jiregnaworku.github.io",
+    origin: process.env.CLIENT_ORIGIN || "*",
   })
 );
+
+// Helper: Compose prompt from messages
+const composePrompt = (messages) => {
+  return (
+    messages
+      .map((m) =>
+        m.role === "user" ? `User: ${m.content}` : `Assistant: ${m.content}`
+      )
+      .join("\n") + "\nAssistant:"
+  );
+};
 
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body;
 
-  if (!messages) {
-    return res.status(400).json({ error: "Missing messages in request body." });
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({ error: "Missing or invalid messages." });
   }
 
-  const userPrompt =
-    messages
-      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
-      .join("\n") + "\nAssistant:";
+  const prompt = composePrompt(messages);
 
   try {
-    const headers = {
-      Authorization: `Token ${process.env.REPLICATE_API_KEY}`,
-      "Content-Type": "application/json",
-    };
-
-    const response = await fetch("https://api.replicate.com/v1/predictions", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        version:
-          "5c7c1b7d8f46ec92491fc1f86d1ff4d52d598b2782d7f9b645fe2aaca5f8bf45", // meta/llama-2-7b-chat
-        input: {
-          prompt: userPrompt,
-          temperature: 0.75,
-          top_p: 1,
-          max_new_tokens: 500,
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: {
+            max_new_tokens: 500,
+            temperature: 0.7,
+            // add other parameters if you want
+          },
+        }),
+      }
+    );
 
     const data = await response.json();
 
     if (data.error) {
-      console.error("❌ Replicate API error:", data.error);
+      console.error("HuggingFace API error:", data.error);
       return res.status(500).json({ error: data.error });
     }
 
-    // Polling for output
-    let output = data;
-    while (output.status === "starting" || output.status === "processing") {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const pollRes = await fetch(
-        `https://api.replicate.com/v1/predictions/${output.id}`,
-        { headers }
-      );
-      output = await pollRes.json();
+    const generatedText = data[0]?.generated_text;
+
+    if (!generatedText) {
+      return res.status(500).json({ error: "No response from model." });
     }
 
-    if (output.status === "succeeded") {
-      res.json({ choices: [{ message: { content: output.output } }] });
-    } else {
-      console.error("❌ Generation failed:", output.error || output.status);
-      res
-        .status(500)
-        .json({ error: output.error || "Failed to get a valid response." });
-    }
+    // Strip prompt from generated text if repeated
+    const answer = generatedText.replace(prompt, "").trim();
+
+    res.json({ choices: [{ message: { content: answer } }] });
   } catch (err) {
-    console.error("❌ Error communicating with Replicate:", err);
+    console.error("Error calling HuggingFace API:", err);
     res.status(500).json({ error: "Internal server error." });
   }
 });
