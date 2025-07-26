@@ -11,7 +11,9 @@ const PORT = process.env.PORT || 3001;
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || "http://localhost:3000",
+    origin:
+      process.env.CLIENT_ORIGIN ||
+      "https://jiregnaworku.github.io/Personal-portfolio",
   })
 );
 
